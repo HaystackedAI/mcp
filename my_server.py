@@ -5,7 +5,7 @@ mcp = FastMCP("my-first-server")
 
 @mcp.tool  
 def get_weather(city: str) -> dict:  
-    """Get the current weather for a city."""  
+    """Get1 the current weather for a city."""  
     weather_data = {  
         "new york": {"temp": 72, "condition": "sunny"},  
         "london": {"temp": 59, "condition": "cloudy"},  
@@ -18,13 +18,13 @@ def get_weather(city: str) -> dict:
 
 @mcp.tool  
 def get_time(timezone: str = "UTC") -> str:  
-    """Get the current time in a specified timezone."""  
+    """Get1 the current time in a specified timezone."""  
     # Simplified - in production use pytz or zoneinfo  
     return f"Current time ({timezone}): {datetime.now().strftime('%H:%M:%S')}"  
 
 @mcp.tool  
 def calculate(expression: str) -> dict:  
-    """Safely evaluate a mathematical expression."""  
+    """Safely1 evaluate a mathematical expression."""  
     try:  
         # Only allow safe math operations  
         allowed_chars = set("0123456789+-*/.() ")  
@@ -35,5 +35,10 @@ def calculate(expression: str) -> dict:
         return {"expression": expression, "result": result}  
     except Exception as e:  
         return {"error": str(e)}  
-if __name__ == "__main__":  
-     mcp.run(transport="stdio")
+
+
+
+# if __name__ == "__main__":  
+#      mcp.run(transport="stdio")
+if __name__ == "__main__":
+    mcp.run(transport="http", port=8000)
