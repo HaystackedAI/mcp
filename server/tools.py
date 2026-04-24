@@ -9,11 +9,11 @@ def tool(name):
 
 def register_all_tools(app):
 
-    from server.tools_document import extract_document
-    from server.tools_vendor import get_vendor_candidates
-    from server.tools_growthzone import query_erp_invoices
-    from server.tools_bank import query_bank_transactions
-    from server.tools_write import (
+    from tools.tools_document import extract_document
+    from tools.tools_vendor import get_vendor_candidates
+    from tools.tools_growthzone import query_erp_invoices
+    from tools.tools_bank import query_bank_transactions
+    from tools.tools_write import (
         write_invoice,
         write_receipt,
         write_bank_statement,

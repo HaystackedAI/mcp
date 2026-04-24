@@ -4,6 +4,15 @@ from server.tools import tool
 @tool("write_invoice")
 def write_invoice(payload: dict):
     return {"status": "invoice_written"}
+# {
+#     "tool": "write_invoice",
+#     "args": {
+#       "payload": {
+#         "vendor": "AWS",
+#         "amount": 100
+#       }
+#     }
+#   }
 
 @tool("write_receipt")
 def write_receipt(payload: dict):
