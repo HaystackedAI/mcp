@@ -1,12 +1,13 @@
-class ToolExecutor:
-    def __init__(self):
-        self.tools = {}
+# server/executor.py
+from server.registry import registry
 
+class ToolExecutor:
     def register(self, name, fn):
-        self.tools[name] = fn
+        registry[name] = fn
 
     def run(self, name, args):
-        if name not in self.tools:
-            return {"error": "unknown_tool", "tool": name}
+        if name not in registry:
+            return {"error": "unknown_tool"}
+        return registry[name](**args)
 
-        return self.tools[name](**args)
+executor = ToolExecutor()
