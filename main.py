@@ -1,42 +1,72 @@
 from fastapi import FastAPI
-from mcp.server import Server
-from mcp.server.fastapi import create_app
+from mcp.server.fastmcp import FastMCP
+import httpx
+import os
 
-# import tools
-from tools.vendor import lookup_vendor
-from tools.bank import query_bank
-from tools.erp import query_erp
-from tools.ocr import ocr_extract
+mcp = FastMCP("finance-mcp")
 
-# MCP server
-mcp_server = Server("finance-mcp-server")
+# -------------------------
+# TOOL: Vendor lookup
+# -------------------------
+@mcp.tool()
+async def lookup_vendor(name: str) -> dict:
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(
+            f"{os.getenv('VENDOR_API')}/vendors/search",
+            params={"q": name}
+        )
+        r.raise_for_status()
+        data = r.json()
 
-# Register tools
-@mcp_server.tool()
-async def tool_lookup_vendor(name: str) -> dict:
-    return await lookup_vendor(name)
+    if not data:
+        return {"found": False}
 
-
-@mcp_server.tool()
-async def tool_query_bank(amount: float, date: str) -> dict:
-    return await query_bank(amount, date)
-
-
-@mcp_server.tool()
-async def tool_query_erp(vendor_id: str) -> dict:
-    return await query_erp(vendor_id)
-
-
-@mcp_server.tool()
-async def tool_ocr_extract(file_url: str) -> dict:
-    return await ocr_extract(file_url)
+    v = data[0]
+    return {
+        "found": True,
+        "vendor_id": v["id"],
+        "normalized_name": v["name"],
+        "confidence": v.get("score", 0.0)
+    }
 
 
-# FastAPI wrapper
-app: FastAPI = create_app(mcp_server)
+# -------------------------
+# TOOL: Bank matching
+# -------------------------
+@mcp.tool()
+async def query_bank(amount: float, date: str) -> dict:
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(
+            f"{os.getenv('BANK_API')}/transactions",
+            params={"amount": amount, "date": date}
+        )
+        r.raise_for_status()
+        return {"matches": r.json()}
 
 
-# Optional health check
+# -------------------------
+# TOOL: OCR
+# -------------------------
+@mcp.tool()
+async def ocr_extract(file_url: str) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{os.getenv('OCR_API')}/ocr",
+            json={"file_url": file_url}
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+# -------------------------
+# FastAPI wrapper (remote deployment)
+# -------------------------
+app = FastAPI()
+
+# mount MCP into FastAPI
+app.mount("/mcp", mcp.sse_app())
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
