@@ -7,7 +7,7 @@ class ToolExecutor:
 
     def run(self, name, args):
         if name not in registry:
-            return {"error": "unknown_tool"}
+            return {"error": "unknown_tool", "tool": name}
         return registry[name](**args)
 
 executor = ToolExecutor()
