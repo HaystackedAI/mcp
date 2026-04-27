@@ -1,12 +1,14 @@
-# server/app.py
 from fastapi import FastAPI
-from server.routes import router
-from server.tools import register_all_tools
 
-def create_app():
-    app = FastAPI(title="MCP Server SDK")
+from server.mcp_server import mcp
 
-    register_all_tools(app)
-    app.include_router(router)
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="Finance MCP Server")
+    app.mount("/mcp", mcp.sse_app())
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
 
     return app

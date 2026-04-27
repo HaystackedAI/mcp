@@ -1,2 +1,0 @@
-# server/registry.py
-registry = {}
