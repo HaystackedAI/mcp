@@ -1,9 +1,40 @@
-import os, sys
+import os
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
-mcp = FastMCP("finance-mcp")
+
+def _parse_csv_env(name: str) -> list[str]:
+    value = os.getenv(name, "")
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+_default_allowed_hosts = [
+    "127.0.0.1:*",
+    "localhost:*",
+    "[::1]:*",
+    "mcpserver.fastapicloud.dev",
+    "mcpserver.fastapicloud.dev:*",
+]
+_extra_allowed_hosts = _parse_csv_env("MCP_ALLOWED_HOSTS")
+
+_default_allowed_origins = [
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    "http://[::1]:*",
+    "https://mcpserver.fastapicloud.dev",
+]
+_extra_allowed_origins = _parse_csv_env("MCP_ALLOWED_ORIGINS")
+
+mcp = FastMCP(
+    "finance-mcp",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[*_default_allowed_hosts, *_extra_allowed_hosts],
+        allowed_origins=[*_default_allowed_origins, *_extra_allowed_origins],
+    ),
+)
 
 
 @mcp.tool()
