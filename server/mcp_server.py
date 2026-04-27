@@ -1,4 +1,4 @@
-import os
+import os, sys
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -10,9 +10,12 @@ mcp = FastMCP("finance-mcp")
 async def lookup_vendor(name: str) -> dict:
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.get(
-            f"{os.getenv('VENDOR_API')}/vendors/search",
+            "https://jsonplaceholder.typicode.com/users",
             params={"q": name},
         )
+
+        # print(response.request.url, file=sys.stderr, flush=True)
+
         response.raise_for_status()
         data = response.json()
 
@@ -26,7 +29,8 @@ async def lookup_vendor(name: str) -> dict:
         "normalized_name": vendor["name"],
         "confidence": vendor.get("score", 0.0),
     }
-
+    
+    
 
 @mcp.tool()
 async def query_bank(amount: float, date: str) -> dict:
