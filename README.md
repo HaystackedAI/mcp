@@ -69,6 +69,7 @@ Environment notes for deployed MCP endpoint:
 
 - `MCP_ALLOWED_HOSTS`: comma-separated host allowlist for MCP transport security (examples: `mcpserver.fastapicloud.dev,mcpserver.fastapicloud.dev:*`)
 - `MCP_ALLOWED_ORIGINS`: comma-separated origin allowlist (examples: `https://mcpserver.fastapicloud.dev`)
+- `MCP_STATELESS_HTTP`: set `true` (recommended for cloud/proxy/LB deployments) to avoid session-id stickiness issues
 
 If your platform gives a new hostname, add it to these env vars and redeploy.
 

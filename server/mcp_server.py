@@ -10,6 +10,13 @@ def _parse_csv_env(name: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _parse_bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 _default_allowed_hosts = [
     "127.0.0.1:*",
     "localhost:*",
@@ -26,9 +33,11 @@ _default_allowed_origins = [
     "https://mcpserver.fastapicloud.dev",
 ]
 _extra_allowed_origins = _parse_csv_env("MCP_ALLOWED_ORIGINS")
+_stateless_http = _parse_bool_env("MCP_STATELESS_HTTP", True)
 
 mcp = FastMCP(
     "finance-mcp",
+    stateless_http=_stateless_http,
     transport_security=TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=[*_default_allowed_hosts, *_extra_allowed_hosts],
