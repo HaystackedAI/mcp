@@ -71,3 +71,12 @@ Environment notes for deployed MCP endpoint:
 - `MCP_ALLOWED_ORIGINS`: comma-separated origin allowlist (examples: `https://mcpserver.fastapicloud.dev`)
 
 If your platform gives a new hostname, add it to these env vars and redeploy.
+
+
+
+
+
+
+ mcp dev server/mcp_server.py:mcp
+
+ npx -y @modelcontextprotocol/inspector --transport http --server-url https://mcpserver.fastapicloud.dev/mcp/
