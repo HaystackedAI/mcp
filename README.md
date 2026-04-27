@@ -21,3 +21,46 @@ If invoice amount > $10,000 -> submit for manager approval before saving.
 Need MCP to unify all preprocessing tools so other services can call them.
 
 Need Agent (LangGraph) to handle the decision workflow (confidence check, approval routing, user feedback loop).
+
+
+
+
+
+User
+ ↓
+Frontend (chat/UI)
+ ↓
+AI Agent (LLM runtime)
+     ↓
+     MCP client calls "list_tools"
+     ↓
+     receives tool list (lookup_vendor, query_bank, ocr_extract)
+     ↓
+     tool list + user prompt go into LLM context
+     ↓
+LLM decides tool call
+     ↓
+MCP client sends:
+   call tool lookup_vendor(name=...)
+ ↓
+MCP SERVER (your server/mcp_server.py process)
+     ↓
+     lookup_vendor()  ← @mcp.tool
+     ↓
+     httpx call
+     ↓
+External API / DB (this is your real backend system)
+     ↓
+result returned to MCP server
+     ↓
+MCP client receives result
+     ↓
+LLM consumes result
+     ↓
+LLM decides:
+   - final answer OR
+   - next tool call
+     ↓
+Frontend
+     ↓
+User
