@@ -3,7 +3,13 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from core.config import settings
-from tools.invoice_ingest import generate_invoice_insert_sql, classify_text_type_from_text
+from tools.invoice_ingest import (
+    classify_text_type_from_text,
+    generate_bank_statement_insert_sql,
+    generate_invoice_insert_sql,
+    generate_receipt_insert_sql,
+)
+
 
 def _parse_csv_env(name: str) -> list[str]:
     value = os.getenv(name, "")
@@ -53,9 +59,6 @@ async def lookup_vendor(name: str) -> dict:
             "https://jsonplaceholder.typicode.com/users",
             params={"q": name},
         )
-
-        # print(response.request.url, file=sys.stderr, flush=True)
-
         response.raise_for_status()
         data = response.json()
 
@@ -69,8 +72,7 @@ async def lookup_vendor(name: str) -> dict:
         "normalized_name": vendor["name"],
         "confidence": vendor.get("score", 0.0),
     }
-    
-    
+
 
 @mcp.tool()
 async def query_bank(amount: float, date: str) -> dict:
@@ -94,27 +96,52 @@ async def ocr_extract(file_url: str) -> dict:
         return response.json()
 
 
-
-
 @mcp.tool()
 async def classify_text_type(text: str) -> dict:
     return await classify_text_type_from_text(
         text=text,
         openai_api_key=settings.OPENAI_API_KEY,
     )
-    
-    
+
+
+@mcp.tool()
+async def generate_invoice_sql(text: str, tenant_id: str | None = None) -> dict:
+    return await generate_invoice_insert_sql(
+        text=text,
+        schema_context=None,
+        tenant_id=tenant_id,
+        openai_api_key=settings.OPENAI_API_KEY,
+    )
+
+
+@mcp.tool()
+async def generate_receipt_sql(text: str, tenant_id: str | None = None) -> dict:
+    return await generate_receipt_insert_sql(
+        text=text,
+        tenant_id=tenant_id,
+        openai_api_key=settings.OPENAI_API_KEY,
+    )
+
+
+@mcp.tool()
+async def generate_bank_statement_sql(text: str, tenant_id: str | None = None) -> dict:
+    return await generate_bank_statement_insert_sql(
+        text=text,
+        tenant_id=tenant_id,
+        openai_api_key=settings.OPENAI_API_KEY,
+    )
+
+
 @mcp.tool()
 async def generate_sql_from_text(
     text: str,
     schema_context: str | None = None,
     tenant_id: str | None = None,
 ) -> dict:
+    _ = schema_context
     return await generate_invoice_insert_sql(
         text=text,
-        schema_context=schema_context,
+        schema_context=None,
         tenant_id=tenant_id,
         openai_api_key=settings.OPENAI_API_KEY,
     )
-
-
