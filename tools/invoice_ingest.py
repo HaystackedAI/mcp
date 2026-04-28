@@ -100,3 +100,83 @@ async def generate_invoice_insert_sql(
 
     return {"sql": sql, "metadata": {"mode": "deterministic_insert", "row_count": len(rows)}}
 
+
+
+def _normalize_doc_type(raw_value: Any) -> str:
+    value = str(raw_value or "").strip().lower().replace(" ", "_")
+    if value in {"invoice", "receipt", "bank_statement"}:
+        return value
+    return "unknown"
+
+
+def _coerce_confidence(raw_value: Any) -> float:
+    try:
+        value = float(raw_value)
+    except Exception:
+        return 0.0
+    if value < 0:
+        return 0.0
+    if value > 1:
+        return 1.0
+    return value
+
+
+async def classify_text_type_from_text(
+    *,
+    text: str,
+    openai_api_key: str | None,
+    model: str = "gpt-4o-mini",
+) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Classify the input text into one of: invoice, receipt, bank_statement, unknown. "
+                            "Return JSON with keys: doc_type, confidence, reason. "
+                            "Confidence must be a float between 0 and 1."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Text to classify:\n{text}",
+                    },
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0,
+            },
+        )
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"] or "{}"
+
+    try:
+        parsed = json.loads(content)
+    except Exception:
+        return {
+            "doc_type": "unknown",
+            "confidence": 0.0,
+            "reason": "model_did_not_return_valid_json",
+            "raw": content,
+        }
+
+    if not isinstance(parsed, dict):
+        return {
+            "doc_type": "unknown",
+            "confidence": 0.0,
+            "reason": "model_json_not_object",
+            "raw": content,
+        }
+
+    return {
+        "doc_type": _normalize_doc_type(parsed.get("doc_type")),
+        "confidence": _coerce_confidence(parsed.get("confidence")),
+        "reason": str(parsed.get("reason") or "").strip(),
+    }

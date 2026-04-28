@@ -3,7 +3,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from core.config import settings
-from tools.invoice_ingest import generate_invoice_insert_sql
+from tools.invoice_ingest import generate_invoice_insert_sql, classify_text_type_from_text
 
 def _parse_csv_env(name: str) -> list[str]:
     value = os.getenv(name, "")
@@ -95,6 +95,15 @@ async def ocr_extract(file_url: str) -> dict:
 
 
 
+
+@mcp.tool()
+async def classify_text_type(text: str) -> dict:
+    return await classify_text_type_from_text(
+        text=text,
+        openai_api_key=settings.OPENAI_API_KEY,
+    )
+    
+    
 @mcp.tool()
 async def generate_sql_from_text(
     text: str,
@@ -107,3 +116,5 @@ async def generate_sql_from_text(
         tenant_id=tenant_id,
         openai_api_key=settings.OPENAI_API_KEY,
     )
+
+
