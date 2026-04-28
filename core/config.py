@@ -5,5 +5,6 @@ class Settings:
     BANK_API = os.getenv("BANK_API")
     VENDOR_API = os.getenv("VENDOR_API")
     OCR_API = os.getenv("OCR_API")
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 settings = Settings()

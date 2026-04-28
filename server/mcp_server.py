@@ -1,9 +1,8 @@
-import os
-
-import httpx
+import os, httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
+from core.config import settings
 
 def _parse_csv_env(name: str) -> list[str]:
     value = os.getenv(name, "")
@@ -92,3 +91,49 @@ async def ocr_extract(file_url: str) -> dict:
         )
         response.raise_for_status()
         return response.json()
+
+
+
+@mcp.tool()
+async def generate_sql_from_text(
+    text: str,
+    schema_context: str | None = None
+) -> dict:
+
+    async with httpx.AsyncClient(timeout=30) as client:
+
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4o",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You convert text into SQL. Return only JSON."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"""
+                                        text:
+                                        {text}
+
+                                        schema_context:
+                                        {schema_context}
+                                        """
+                    }
+                ],
+                "response_format": {"type": "json_object"}
+            },
+        )
+
+        response.raise_for_status()
+        result = response.json()
+
+    return {
+        "sql": result["choices"][0]["message"]["content"],
+        "metadata": {}
+    }
