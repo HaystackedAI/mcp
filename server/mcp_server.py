@@ -113,7 +113,11 @@ async def generate_sql_from_text(
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You convert text into SQL. Return only JSON."
+                        "content": (
+                            "You convert business text into PostgreSQL SQL. "
+                            "Return SQL only, with no markdown and no JSON. "
+                            "Allowed statements: SELECT, INSERT, UPDATE, DELETE, WITH."
+                        )
                     },
                     {
                         "role": "user",
@@ -126,14 +130,25 @@ async def generate_sql_from_text(
                                         """
                     }
                 ],
-                "response_format": {"type": "json_object"}
             },
         )
 
         response.raise_for_status()
         result = response.json()
 
-    return {
-        "sql": result["choices"][0]["message"]["content"],
-        "metadata": {}
-    }
+    sql = (result["choices"][0]["message"]["content"] or "").strip()
+    if sql.startswith("```"):
+        sql = sql.strip("`")
+        if sql.lower().startswith("sql"):
+            sql = sql[3:]
+        sql = sql.strip()
+
+    first_token = sql.split(None, 1)[0].lower() if sql.split() else ""
+    if first_token not in {"select", "insert", "update", "delete", "with"}:
+        return {
+            "error": "model_did_not_return_sql",
+            "sql": sql,
+            "metadata": {"first_token": first_token},
+        }
+
+    return {"sql": sql, "metadata": {}}
