@@ -87,7 +87,7 @@ async def query_bank(amount: float, date: str) -> dict:
 
 @mcp.tool()
 async def ocr_extract(file_url: str) -> dict:
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=239) as client:
         response = await client.post(
             f"{os.getenv('OCR_API')}/ocr",
             json={"file_url": file_url},

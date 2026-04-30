@@ -37,7 +37,7 @@ async def _extract_rows_with_openai(
     model: str,
     system_prompt: str,
 ) -> dict:
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=239) as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
             headers={
@@ -264,7 +264,7 @@ async def classify_text_type_from_text(
     openai_api_key: str | None,
     model: str = "gpt-4o-mini",
 ) -> dict:
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=239) as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",
             headers={
