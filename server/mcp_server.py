@@ -10,8 +10,14 @@ from core.config import settings
 from tools.invoice_ingest import (
     classify_text_type_from_text,
     generate_bank_statement_insert_sql,
+    generate_creditcard_statement_insert_sql,
+    generate_customer_invoice_insert_sql,
     generate_invoice_insert_sql,
+    generate_insert_sql_for_doc_type,
+    generate_payment_voucher_insert_sql,
     generate_receipt_insert_sql,
+    generate_sales_receipt_insert_sql,
+    generate_vendor_bill_insert_sql,
 )
 
 logger = logging.getLogger(__name__)
@@ -147,6 +153,34 @@ async def generate_invoice_sql(text: str, tenant_id: str | None = None) -> dict:
 
 
 @mcp.tool()
+async def generate_customer_invoice_sql(text: str, tenant_id: str | None = None) -> dict:
+    started = time.perf_counter()
+    logger.info(
+        "MCP tool generate_customer_invoice_sql started text_length=%s tenant_id=%s api_key_present=%s",
+        len(text or ""),
+        tenant_id,
+        bool(settings.OPENAI_API_KEY),
+    )
+    try:
+        result = await generate_customer_invoice_insert_sql(
+            text=text,
+            schema_context=None,
+            tenant_id=tenant_id,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool generate_customer_invoice_sql failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info(
+        "MCP tool generate_customer_invoice_sql completed elapsed_ms=%s result_keys=%s sql_length=%s",
+        int((time.perf_counter() - started) * 1000),
+        sorted(result.keys()) if isinstance(result, dict) else None,
+        len(result.get("sql", "")) if isinstance(result, dict) else None,
+    )
+    return result
+
+
+@mcp.tool()
 async def generate_receipt_sql(text: str, tenant_id: str | None = None) -> dict:
     started = time.perf_counter()
     logger.info(
@@ -166,6 +200,87 @@ async def generate_receipt_sql(text: str, tenant_id: str | None = None) -> dict:
         raise
     logger.info(
         "MCP tool generate_receipt_sql completed elapsed_ms=%s result_keys=%s sql_length=%s",
+        int((time.perf_counter() - started) * 1000),
+        sorted(result.keys()) if isinstance(result, dict) else None,
+        len(result.get("sql", "")) if isinstance(result, dict) else None,
+    )
+    return result
+
+
+@mcp.tool()
+async def generate_vendor_bill_sql(text: str, tenant_id: str | None = None) -> dict:
+    started = time.perf_counter()
+    logger.info(
+        "MCP tool generate_vendor_bill_sql started text_length=%s tenant_id=%s api_key_present=%s",
+        len(text or ""),
+        tenant_id,
+        bool(settings.OPENAI_API_KEY),
+    )
+    try:
+        result = await generate_vendor_bill_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool generate_vendor_bill_sql failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info(
+        "MCP tool generate_vendor_bill_sql completed elapsed_ms=%s result_keys=%s sql_length=%s",
+        int((time.perf_counter() - started) * 1000),
+        sorted(result.keys()) if isinstance(result, dict) else None,
+        len(result.get("sql", "")) if isinstance(result, dict) else None,
+    )
+    return result
+
+
+@mcp.tool()
+async def generate_payment_voucher_sql(text: str, tenant_id: str | None = None) -> dict:
+    started = time.perf_counter()
+    logger.info(
+        "MCP tool generate_payment_voucher_sql started text_length=%s tenant_id=%s api_key_present=%s",
+        len(text or ""),
+        tenant_id,
+        bool(settings.OPENAI_API_KEY),
+    )
+    try:
+        result = await generate_payment_voucher_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool generate_payment_voucher_sql failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info(
+        "MCP tool generate_payment_voucher_sql completed elapsed_ms=%s result_keys=%s sql_length=%s",
+        int((time.perf_counter() - started) * 1000),
+        sorted(result.keys()) if isinstance(result, dict) else None,
+        len(result.get("sql", "")) if isinstance(result, dict) else None,
+    )
+    return result
+
+
+@mcp.tool()
+async def generate_sales_receipt_sql(text: str, tenant_id: str | None = None) -> dict:
+    started = time.perf_counter()
+    logger.info(
+        "MCP tool generate_sales_receipt_sql started text_length=%s tenant_id=%s api_key_present=%s",
+        len(text or ""),
+        tenant_id,
+        bool(settings.OPENAI_API_KEY),
+    )
+    try:
+        result = await generate_sales_receipt_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool generate_sales_receipt_sql failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info(
+        "MCP tool generate_sales_receipt_sql completed elapsed_ms=%s result_keys=%s sql_length=%s",
         int((time.perf_counter() - started) * 1000),
         sorted(result.keys()) if isinstance(result, dict) else None,
         len(result.get("sql", "")) if isinstance(result, dict) else None,
@@ -202,15 +317,55 @@ async def generate_bank_statement_sql(text: str, tenant_id: str | None = None) -
 
 
 @mcp.tool()
+async def generate_creditcard_statement_sql(text: str, tenant_id: str | None = None) -> dict:
+    started = time.perf_counter()
+    logger.info(
+        "MCP tool generate_creditcard_statement_sql started text_length=%s tenant_id=%s api_key_present=%s",
+        len(text or ""),
+        tenant_id,
+        bool(settings.OPENAI_API_KEY),
+    )
+    try:
+        result = await generate_creditcard_statement_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool generate_creditcard_statement_sql failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info(
+        "MCP tool generate_creditcard_statement_sql completed elapsed_ms=%s result_keys=%s sql_length=%s result_preview=%s",
+        int((time.perf_counter() - started) * 1000),
+        sorted(result.keys()) if isinstance(result, dict) else None,
+        len(result.get("sql", "")) if isinstance(result, dict) else None,
+        str(result)[:1000],
+    )
+    return result
+
+
+@mcp.tool()
 async def generate_sql_from_text(
     text: str,
     schema_context: str | None = None,
     tenant_id: str | None = None,
 ) -> dict:
     _ = schema_context
-    return await generate_invoice_insert_sql(
+    classification = await classify_text_type_from_text(
+        text=text,
+        openai_api_key=settings.OPENAI_API_KEY,
+    )
+    if classification.get("doc_type") == "unknown":
+        return {"error": "unsupported_doc_type", "sql": "", "metadata": classification}
+
+    result = await generate_insert_sql_for_doc_type(
+        doc_type=classification["doc_type"],
         text=text,
         schema_context=None,
         tenant_id=tenant_id,
         openai_api_key=settings.OPENAI_API_KEY,
     )
+    if isinstance(result, dict):
+        metadata = result.setdefault("metadata", {})
+        metadata["classification"] = classification
+    return result

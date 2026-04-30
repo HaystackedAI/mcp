@@ -10,16 +10,58 @@ DEFAULT_TENANT_ID = "550e8400-e29b-41d4-a716-446655440000"
 OPENAI_TIMEOUT_SECONDS = 300
 logger = logging.getLogger(__name__)
 
+DOCUMENT_TYPES = {
+    "customer_invoice",
+    "vendor_bill",
+    "payment_voucher",
+    "sales_receipt",
+    "bank_statement",
+    "creditcard_statement",
+}
+
+DOCUMENT_TYPE_ALIASES = {
+    "invoice": "customer_invoice",
+    "customer_invoice": "customer_invoice",
+    "customer invoice": "customer_invoice",
+    "bill": "vendor_bill",
+    "vendor_bill": "vendor_bill",
+    "vendor bill": "vendor_bill",
+    "voucher": "payment_voucher",
+    "payment_voucher": "payment_voucher",
+    "payment voucher": "payment_voucher",
+    "receipt": "sales_receipt",
+    "sales_receipt": "sales_receipt",
+    "sales receipt": "sales_receipt",
+    "bankstatement": "bank_statement",
+    "bank_statement": "bank_statement",
+    "bank statement": "bank_statement",
+    "credit_card_statement": "creditcard_statement",
+    "credit card statement": "creditcard_statement",
+    "creditcard_statement": "creditcard_statement",
+    "creditcard statement": "creditcard_statement",
+}
+
+DOCUMENT_TYPE_TABLE_ROUTES = {
+    "customer_invoice": "invoice",
+    "vendor_bill": "invoice",
+    "payment_voucher": "receipt",
+    "sales_receipt": "receipt",
+    "bank_statement": "bank_statement",
+    "creditcard_statement": "bank_statement",
+}
+
 
 def _q(value: Any) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
 def _normalize_doc_type(raw_value: Any) -> str:
-    value = str(raw_value or "").strip().lower().replace(" ", "_")
-    if value in {"invoice", "receipt", "bank_statement"}:
-        return value
-    return "unknown"
+    value = str(raw_value or "").strip().lower()
+    return DOCUMENT_TYPE_ALIASES.get(value, DOCUMENT_TYPE_ALIASES.get(value.replace(" ", "_"), "unknown"))
+
+
+def _route_for_doc_type(doc_type: str) -> str:
+    return DOCUMENT_TYPE_TABLE_ROUTES.get(_normalize_doc_type(doc_type), "unknown")
 
 
 def _coerce_confidence(raw_value: Any) -> float:
@@ -271,7 +313,15 @@ async def generate_invoice_insert_sql(
         return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
 
     logger.info("Invoice SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
-    return {"sql": sql, "metadata": {"mode": "deterministic_insert", "doc_type": "invoice", "row_count": len(extracted["rows"])}}
+    return {
+        "sql": sql,
+        "metadata": {
+            "mode": "deterministic_insert",
+            "doc_type": "customer_invoice",
+            "table_route": "invoice",
+            "row_count": len(extracted["rows"]),
+        },
+    }
 
 
 async def generate_receipt_insert_sql(
@@ -300,7 +350,15 @@ async def generate_receipt_insert_sql(
         return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
 
     logger.info("Receipt SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
-    return {"sql": sql, "metadata": {"mode": "deterministic_insert", "doc_type": "receipt", "row_count": len(extracted["rows"])}}
+    return {
+        "sql": sql,
+        "metadata": {
+            "mode": "deterministic_insert",
+            "doc_type": "sales_receipt",
+            "table_route": "receipt",
+            "row_count": len(extracted["rows"]),
+        },
+    }
 
 
 async def generate_bank_statement_insert_sql(
@@ -329,7 +387,222 @@ async def generate_bank_statement_insert_sql(
         return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
 
     logger.info("Bank statement SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
-    return {"sql": sql, "metadata": {"mode": "deterministic_insert", "doc_type": "bank_statement", "row_count": len(extracted["rows"])}}
+    return {
+        "sql": sql,
+        "metadata": {
+            "mode": "deterministic_insert",
+            "doc_type": "bank_statement",
+            "table_route": "bank_statement",
+            "row_count": len(extracted["rows"]),
+        },
+    }
+
+
+async def generate_customer_invoice_insert_sql(
+    *,
+    text: str,
+    tenant_id: str | None,
+    openai_api_key: str | None,
+    schema_context: str | None = None,
+    model: str = "gpt-4o",
+) -> dict:
+    return await generate_invoice_insert_sql(
+        text=text,
+        schema_context=schema_context,
+        tenant_id=tenant_id,
+        openai_api_key=openai_api_key,
+        model=model,
+    )
+
+
+async def generate_vendor_bill_insert_sql(
+    *,
+    text: str,
+    tenant_id: str | None,
+    openai_api_key: str | None,
+    model: str = "gpt-4o",
+) -> dict:
+    logger.info("Generating vendor bill SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
+    extracted = await _extract_rows_with_openai(
+        text=text,
+        openai_api_key=openai_api_key,
+        model=model,
+        system_prompt=(
+            "Extract vendor bill rows from text and return JSON only. "
+            "Use description for the bill issuer, bill number, or memo. "
+            'Format: {"rows":[{"description":"...","amount":123.45,"date":"YYYY-MM-DD"}]}'
+        ),
+    )
+    if "rows" not in extracted:
+        return extracted
+
+    sql = _build_invoice_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID)
+    if not sql:
+        logger.error("Vendor bill SQL generation produced no statements row_count=%s", len(extracted["rows"]))
+        return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
+
+    logger.info("Vendor bill SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
+    return {
+        "sql": sql,
+        "metadata": {
+            "mode": "deterministic_insert",
+            "doc_type": "vendor_bill",
+            "table_route": "invoice",
+            "row_count": len(extracted["rows"]),
+        },
+    }
+
+
+async def generate_payment_voucher_insert_sql(
+    *,
+    text: str,
+    tenant_id: str | None,
+    openai_api_key: str | None,
+    model: str = "gpt-4o",
+) -> dict:
+    logger.info("Generating payment voucher SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
+    extracted = await _extract_rows_with_openai(
+        text=text,
+        openai_api_key=openai_api_key,
+        model=model,
+        system_prompt=(
+            "Extract payment voucher rows from text and return JSON only. "
+            "Use vendor_name for the payee and receipt_no for the voucher or payment reference number. "
+            'Format: {"rows":[{"receipt_no":"...","vendor_name":"...","currency":"CAD","amount_total":123.45,"receipt_date":"YYYY-MM-DD","raw_text":"..."}]}'
+        ),
+    )
+    if "rows" not in extracted:
+        return extracted
+
+    sql = _build_receipt_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID)
+    if not sql:
+        logger.error("Payment voucher SQL generation produced no statements row_count=%s", len(extracted["rows"]))
+        return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
+
+    logger.info("Payment voucher SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
+    return {
+        "sql": sql,
+        "metadata": {
+            "mode": "deterministic_insert",
+            "doc_type": "payment_voucher",
+            "table_route": "receipt",
+            "row_count": len(extracted["rows"]),
+        },
+    }
+
+
+async def generate_sales_receipt_insert_sql(
+    *,
+    text: str,
+    tenant_id: str | None,
+    openai_api_key: str | None,
+    model: str = "gpt-4o",
+) -> dict:
+    return await generate_receipt_insert_sql(
+        text=text,
+        tenant_id=tenant_id,
+        openai_api_key=openai_api_key,
+        model=model,
+    )
+
+
+async def generate_creditcard_statement_insert_sql(
+    *,
+    text: str,
+    tenant_id: str | None,
+    openai_api_key: str | None,
+    model: str = "gpt-4o",
+) -> dict:
+    logger.info("Generating credit card statement SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
+    extracted = await _extract_rows_with_openai(
+        text=text,
+        openai_api_key=openai_api_key,
+        model=model,
+        system_prompt=(
+            "Extract credit card statement transaction rows from text and return JSON only. "
+            "Use account_name for the card/account label, counterparty for merchant/payee, and txn_type for debit/credit/fee/payment. "
+            'Format: {"rows":[{"account_name":"...","counterparty":"...","txn_type":"...","amount":123.45,"balance":456.78,"txn_date":"YYYY-MM-DD","raw_text":"..."}]}'
+        ),
+    )
+    if "rows" not in extracted:
+        return extracted
+
+    sql = _build_bank_statement_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID)
+    if not sql:
+        logger.error("Credit card statement SQL generation produced no statements row_count=%s", len(extracted["rows"]))
+        return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
+
+    logger.info("Credit card statement SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
+    return {
+        "sql": sql,
+        "metadata": {
+            "mode": "deterministic_insert",
+            "doc_type": "creditcard_statement",
+            "table_route": "bank_statement",
+            "row_count": len(extracted["rows"]),
+        },
+    }
+
+
+async def generate_insert_sql_for_doc_type(
+    *,
+    doc_type: str,
+    text: str,
+    schema_context: str | None = None,
+    tenant_id: str | None,
+    openai_api_key: str | None,
+    model: str = "gpt-4o",
+) -> dict:
+    normalized_doc_type = _normalize_doc_type(doc_type)
+    if normalized_doc_type == "customer_invoice":
+        return await generate_customer_invoice_insert_sql(
+            text=text,
+            schema_context=schema_context,
+            tenant_id=tenant_id,
+            openai_api_key=openai_api_key,
+            model=model,
+        )
+    if normalized_doc_type == "vendor_bill":
+        return await generate_vendor_bill_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=openai_api_key,
+            model=model,
+        )
+    if normalized_doc_type == "payment_voucher":
+        return await generate_payment_voucher_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=openai_api_key,
+            model=model,
+        )
+    if normalized_doc_type == "sales_receipt":
+        return await generate_sales_receipt_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=openai_api_key,
+            model=model,
+        )
+    if normalized_doc_type == "bank_statement":
+        return await generate_bank_statement_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=openai_api_key,
+            model=model,
+        )
+    if normalized_doc_type == "creditcard_statement":
+        return await generate_creditcard_statement_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=openai_api_key,
+            model=model,
+        )
+
+    return {
+        "error": "unsupported_doc_type",
+        "sql": "",
+        "metadata": {"doc_type": "unknown", "table_route": "unknown"},
+    }
 
 
 async def classify_text_type_from_text(
@@ -361,7 +634,9 @@ async def classify_text_type_from_text(
                         {
                             "role": "system",
                             "content": (
-                                "Classify the input text into one of: invoice, receipt, bank_statement, unknown. "
+                                "Classify the input text into one of: "
+                                "customer_invoice, vendor_bill, payment_voucher, sales_receipt, "
+                                "bank_statement, creditcard_statement, unknown. "
                                 "Return JSON with keys: doc_type, confidence, reason. "
                                 "Confidence must be a float between 0 and 1."
                             ),
@@ -423,5 +698,6 @@ async def classify_text_type_from_text(
         "confidence": _coerce_confidence(parsed.get("confidence")),
         "reason": str(parsed.get("reason") or "").strip(),
     }
+    result["table_route"] = _route_for_doc_type(result["doc_type"])
     logger.info("OpenAI classification completed request_id=%s model=%s result=%s", request_id, model, result)
     return result

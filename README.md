@@ -7,12 +7,25 @@ User uploads a file (text PDF, scanned image PDF, CSV, or regular image) -> syst
 - CSV -> parse directly, skip LLM entirely (because it's already structured data)
 - Image -> OCR or use 4o vision
 
-Then OpenAI API 4o decides if it's an invoice, receipt, bankstatement, or others.
+Then OpenAI API 4o classifies the document as one of:
 
-- If invoice -> goes to invoice table
-- If receipt -> goes to receipt table
-- If bankstatement -> goes to bankstatement table
-- If others -> goes to log table (metadata only)
+- `customer_invoice`
+- `vendor_bill`
+- `payment_voucher`
+- `sales_receipt`
+- `bank_statement`
+- `creditcard_statement`
+- `unknown`
+
+The target tables do not change:
+
+- `customer_invoice` -> invoice table
+- `vendor_bill` -> invoice table
+- `payment_voucher` -> receipt table
+- `sales_receipt` -> receipt table
+- `bank_statement` -> bankstatement table
+- `creditcard_statement` -> bankstatement table
+- `unknown` -> log table (metadata only)
 
 If classification confidence is low (<70%) -> ask user to confirm before proceeding.
 
