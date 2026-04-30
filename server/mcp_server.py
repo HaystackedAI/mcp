@@ -1,4 +1,8 @@
-import os, httpx
+import logging
+import os
+import time
+
+import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -9,6 +13,8 @@ from tools.invoice_ingest import (
     generate_invoice_insert_sql,
     generate_receipt_insert_sql,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_csv_env(name: str) -> list[str]:
@@ -98,38 +104,101 @@ async def ocr_extract(file_url: str) -> dict:
 
 @mcp.tool()
 async def classify_text_type(text: str) -> dict:
-    return await classify_text_type_from_text(
-        text=text,
-        openai_api_key=settings.OPENAI_API_KEY,
-    )
+    started = time.perf_counter()
+    logger.info("MCP tool classify_text_type started text_length=%s api_key_present=%s", len(text or ""), bool(settings.OPENAI_API_KEY))
+    try:
+        result = await classify_text_type_from_text(
+            text=text,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool classify_text_type failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info("MCP tool classify_text_type completed elapsed_ms=%s result=%s", int((time.perf_counter() - started) * 1000), result)
+    return result
 
 
 @mcp.tool()
 async def generate_invoice_sql(text: str, tenant_id: str | None = None) -> dict:
-    return await generate_invoice_insert_sql(
-        text=text,
-        schema_context=None,
-        tenant_id=tenant_id,
-        openai_api_key=settings.OPENAI_API_KEY,
+    started = time.perf_counter()
+    logger.info(
+        "MCP tool generate_invoice_sql started text_length=%s tenant_id=%s api_key_present=%s",
+        len(text or ""),
+        tenant_id,
+        bool(settings.OPENAI_API_KEY),
     )
+    try:
+        result = await generate_invoice_insert_sql(
+            text=text,
+            schema_context=None,
+            tenant_id=tenant_id,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool generate_invoice_sql failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info(
+        "MCP tool generate_invoice_sql completed elapsed_ms=%s result_keys=%s sql_length=%s",
+        int((time.perf_counter() - started) * 1000),
+        sorted(result.keys()) if isinstance(result, dict) else None,
+        len(result.get("sql", "")) if isinstance(result, dict) else None,
+    )
+    return result
 
 
 @mcp.tool()
 async def generate_receipt_sql(text: str, tenant_id: str | None = None) -> dict:
-    return await generate_receipt_insert_sql(
-        text=text,
-        tenant_id=tenant_id,
-        openai_api_key=settings.OPENAI_API_KEY,
+    started = time.perf_counter()
+    logger.info(
+        "MCP tool generate_receipt_sql started text_length=%s tenant_id=%s api_key_present=%s",
+        len(text or ""),
+        tenant_id,
+        bool(settings.OPENAI_API_KEY),
     )
+    try:
+        result = await generate_receipt_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool generate_receipt_sql failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info(
+        "MCP tool generate_receipt_sql completed elapsed_ms=%s result_keys=%s sql_length=%s",
+        int((time.perf_counter() - started) * 1000),
+        sorted(result.keys()) if isinstance(result, dict) else None,
+        len(result.get("sql", "")) if isinstance(result, dict) else None,
+    )
+    return result
 
 
 @mcp.tool()
 async def generate_bank_statement_sql(text: str, tenant_id: str | None = None) -> dict:
-    return await generate_bank_statement_insert_sql(
-        text=text,
-        tenant_id=tenant_id,
-        openai_api_key=settings.OPENAI_API_KEY,
+    started = time.perf_counter()
+    logger.info(
+        "MCP tool generate_bank_statement_sql started text_length=%s tenant_id=%s api_key_present=%s",
+        len(text or ""),
+        tenant_id,
+        bool(settings.OPENAI_API_KEY),
     )
+    try:
+        result = await generate_bank_statement_insert_sql(
+            text=text,
+            tenant_id=tenant_id,
+            openai_api_key=settings.OPENAI_API_KEY,
+        )
+    except Exception:
+        logger.exception("MCP tool generate_bank_statement_sql failed elapsed_ms=%s", int((time.perf_counter() - started) * 1000))
+        raise
+    logger.info(
+        "MCP tool generate_bank_statement_sql completed elapsed_ms=%s result_keys=%s sql_length=%s result_preview=%s",
+        int((time.perf_counter() - started) * 1000),
+        sorted(result.keys()) if isinstance(result, dict) else None,
+        len(result.get("sql", "")) if isinstance(result, dict) else None,
+        str(result)[:1000],
+    )
+    return result
 
 
 @mcp.tool()

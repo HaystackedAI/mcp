@@ -1,10 +1,14 @@
 import json
+import logging
+import time
 import uuid
 from typing import Any
 
 import httpx
 
 DEFAULT_TENANT_ID = "550e8400-e29b-41d4-a716-446655440000"
+OPENAI_TIMEOUT_SECONDS = 300
+logger = logging.getLogger(__name__)
 
 
 def _q(value: Any) -> str:
@@ -37,35 +41,96 @@ async def _extract_rows_with_openai(
     model: str,
     system_prompt: str,
 ) -> dict:
-    async with httpx.AsyncClient(timeout=239) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {openai_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"text:\n{text}"},
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0,
-            },
+    request_id = str(uuid.uuid4())
+    started = time.perf_counter()
+    logger.info(
+        "OpenAI extraction started request_id=%s model=%s text_length=%s prompt_length=%s api_key_present=%s",
+        request_id,
+        model,
+        len(text or ""),
+        len(system_prompt or ""),
+        bool(openai_api_key),
+    )
+    try:
+        async with httpx.AsyncClient(timeout=OPENAI_TIMEOUT_SECONDS) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openai_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"text:\n{text}"},
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0,
+                },
+            )
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            logger.info(
+                "OpenAI extraction response request_id=%s model=%s status_code=%s elapsed_ms=%s body_preview=%r",
+                request_id,
+                model,
+                response.status_code,
+                elapsed_ms,
+                response.text[:1000],
+            )
+            response.raise_for_status()
+            payload = response.json()
+            content = payload["choices"][0]["message"]["content"] or "{}"
+    except httpx.HTTPStatusError as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logger.exception(
+            "OpenAI extraction HTTP error request_id=%s model=%s status_code=%s elapsed_ms=%s body=%r",
+            request_id,
+            model,
+            exc.response.status_code,
+            elapsed_ms,
+            exc.response.text[:2000],
         )
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"] or "{}"
+        raise
+    except httpx.TimeoutException:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logger.exception(
+            "OpenAI extraction timeout request_id=%s model=%s elapsed_ms=%s timeout_seconds=%s text_length=%s",
+            request_id,
+            model,
+            elapsed_ms,
+            OPENAI_TIMEOUT_SECONDS,
+            len(text or ""),
+        )
+        raise
+    except Exception:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logger.exception("OpenAI extraction failed request_id=%s model=%s elapsed_ms=%s", request_id, model, elapsed_ms)
+        raise
 
     try:
         parsed = json.loads(content)
     except Exception:
+        logger.exception(
+            "OpenAI extraction JSON parse failed request_id=%s model=%s content_preview=%r",
+            request_id,
+            model,
+            content[:1000],
+        )
         return {"error": "model_did_not_return_json_rows", "raw": content, "metadata": {}}
 
     rows = parsed.get("rows", []) if isinstance(parsed, dict) else []
     if not isinstance(rows, list) or not rows:
+        logger.error(
+            "OpenAI extraction found no rows request_id=%s model=%s parsed_type=%s parsed_preview=%s",
+            request_id,
+            model,
+            type(parsed).__name__,
+            str(parsed)[:1000],
+        )
         return {"error": "no_rows_extracted", "sql": "", "metadata": {}}
 
+    logger.info("OpenAI extraction completed request_id=%s model=%s row_count=%s", request_id, model, len(rows))
     return {"rows": rows}
 
 
@@ -187,6 +252,7 @@ async def generate_invoice_insert_sql(
     model: str = "gpt-4o",
 ) -> dict:
     _ = schema_context
+    logger.info("Generating invoice SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
     extracted = await _extract_rows_with_openai(
         text=text,
         openai_api_key=openai_api_key,
@@ -201,8 +267,10 @@ async def generate_invoice_insert_sql(
 
     sql = _build_invoice_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID)
     if not sql:
+        logger.error("Invoice SQL generation produced no statements row_count=%s", len(extracted["rows"]))
         return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
 
+    logger.info("Invoice SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
     return {"sql": sql, "metadata": {"mode": "deterministic_insert", "doc_type": "invoice", "row_count": len(extracted["rows"])}}
 
 
@@ -213,6 +281,7 @@ async def generate_receipt_insert_sql(
     openai_api_key: str | None,
     model: str = "gpt-4o",
 ) -> dict:
+    logger.info("Generating receipt SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
     extracted = await _extract_rows_with_openai(
         text=text,
         openai_api_key=openai_api_key,
@@ -227,8 +296,10 @@ async def generate_receipt_insert_sql(
 
     sql = _build_receipt_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID)
     if not sql:
+        logger.error("Receipt SQL generation produced no statements row_count=%s", len(extracted["rows"]))
         return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
 
+    logger.info("Receipt SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
     return {"sql": sql, "metadata": {"mode": "deterministic_insert", "doc_type": "receipt", "row_count": len(extracted["rows"])}}
 
 
@@ -239,6 +310,7 @@ async def generate_bank_statement_insert_sql(
     openai_api_key: str | None,
     model: str = "gpt-4o",
 ) -> dict:
+    logger.info("Generating bank statement SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
     extracted = await _extract_rows_with_openai(
         text=text,
         openai_api_key=openai_api_key,
@@ -253,8 +325,10 @@ async def generate_bank_statement_insert_sql(
 
     sql = _build_bank_statement_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID)
     if not sql:
+        logger.error("Bank statement SQL generation produced no statements row_count=%s", len(extracted["rows"]))
         return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
 
+    logger.info("Bank statement SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
     return {"sql": sql, "metadata": {"mode": "deterministic_insert", "doc_type": "bank_statement", "row_count": len(extracted["rows"])}}
 
 
@@ -264,36 +338,65 @@ async def classify_text_type_from_text(
     openai_api_key: str | None,
     model: str = "gpt-4o-mini",
 ) -> dict:
-    async with httpx.AsyncClient(timeout=239) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {openai_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Classify the input text into one of: invoice, receipt, bank_statement, unknown. "
-                            "Return JSON with keys: doc_type, confidence, reason. "
-                            "Confidence must be a float between 0 and 1."
-                        ),
-                    },
-                    {"role": "user", "content": f"Text to classify:\n{text}"},
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0,
-            },
-        )
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"] or "{}"
+    request_id = str(uuid.uuid4())
+    started = time.perf_counter()
+    logger.info(
+        "OpenAI classification started request_id=%s model=%s text_length=%s api_key_present=%s",
+        request_id,
+        model,
+        len(text or ""),
+        bool(openai_api_key),
+    )
+    try:
+        async with httpx.AsyncClient(timeout=OPENAI_TIMEOUT_SECONDS) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {openai_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Classify the input text into one of: invoice, receipt, bank_statement, unknown. "
+                                "Return JSON with keys: doc_type, confidence, reason. "
+                                "Confidence must be a float between 0 and 1."
+                            ),
+                        },
+                        {"role": "user", "content": f"Text to classify:\n{text}"},
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0,
+                },
+            )
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            logger.info(
+                "OpenAI classification response request_id=%s model=%s status_code=%s elapsed_ms=%s body_preview=%r",
+                request_id,
+                model,
+                response.status_code,
+                elapsed_ms,
+                response.text[:1000],
+            )
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"] or "{}"
+    except Exception:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logger.exception("OpenAI classification failed request_id=%s model=%s elapsed_ms=%s", request_id, model, elapsed_ms)
+        raise
 
     try:
         parsed = json.loads(content)
     except Exception:
+        logger.exception(
+            "OpenAI classification JSON parse failed request_id=%s model=%s content_preview=%r",
+            request_id,
+            model,
+            content[:1000],
+        )
         return {
             "doc_type": "unknown",
             "confidence": 0.0,
@@ -302,6 +405,12 @@ async def classify_text_type_from_text(
         }
 
     if not isinstance(parsed, dict):
+        logger.error(
+            "OpenAI classification JSON was not an object request_id=%s model=%s parsed_type=%s",
+            request_id,
+            model,
+            type(parsed).__name__,
+        )
         return {
             "doc_type": "unknown",
             "confidence": 0.0,
@@ -309,8 +418,10 @@ async def classify_text_type_from_text(
             "raw": content,
         }
 
-    return {
+    result = {
         "doc_type": _normalize_doc_type(parsed.get("doc_type")),
         "confidence": _coerce_confidence(parsed.get("confidence")),
         "reason": str(parsed.get("reason") or "").strip(),
     }
+    logger.info("OpenAI classification completed request_id=%s model=%s result=%s", request_id, model, result)
+    return result
