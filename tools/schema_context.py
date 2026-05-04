@@ -61,7 +61,7 @@ Extraction fields:
 - line_items: array of source line items when visible, otherwise []
 
 Important table mapping:
-- inv_rec: "sales_receipt"
+- inv_rec: "receipt"
 - issue_date and due_date: receipt date
 - invoice_prefix: "RCT-"
 - invoice_sequence: generated integer unique per tenant
@@ -98,7 +98,7 @@ Extraction fields:
 - line_items: array of source line items when visible, otherwise []
 
 Important table mapping:
-- inv_rec: "payment_voucher"
+- inv_rec: "receipt"
 - issue_date and due_date: voucher/payment date
 - invoice_prefix: "PV-"
 - invoice_sequence: generated integer unique per tenant

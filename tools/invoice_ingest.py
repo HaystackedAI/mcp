@@ -257,6 +257,7 @@ def _build_receipt_insert_sql(rows: list[dict[str, Any]], tenant_id: str, doc_ty
     statements: list[str] = []
     seq_seed = int(str(uuid.uuid4().int)[0:6]) * 1000
     invoice_prefix = "PV-" if doc_type == "payment_voucher" else "RCT-"
+    inv_rec = "receipt"
 
     for i, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
@@ -296,7 +297,7 @@ def _build_receipt_insert_sql(rows: list[dict[str, Any]], tenant_id: str, doc_ty
                 amount_credited, amount_paid, balance_due, status, payment_status, mark_as_sent,
                 auto_apply, tax_breakdown, payment_terms, shipping_info, notes, description
             ) VALUES (
-                {_q(tenant_id)}::uuid, {_q(record_id)}::uuid, {_q(doc_type)}, {_jsonb({})}, {_q(date_str)}, {_q(date_str)}, {_q(invoice_prefix)},
+                {_q(tenant_id)}::uuid, {_q(record_id)}::uuid, {_q(inv_rec)}, {_jsonb({})}, {_q(date_str)}, {_q(date_str)}, {_q(invoice_prefix)},
                 {invoice_sequence}, {_q(customer_id)}::uuid, {_jsonb(snapshot)}, {_jsonb(line_items)}, {subtotal},
                 {_jsonb([])}, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, {subtotal}, {tax_amount}, {amount},
