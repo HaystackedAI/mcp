@@ -253,34 +253,58 @@ def _build_invoice_insert_sql(rows: list[dict[str, Any]], tenant_id: str) -> str
     return "\n".join(statements)
 
 
-def _build_receipt_insert_sql(rows: list[dict[str, Any]], tenant_id: str) -> str:
+def _build_receipt_insert_sql(rows: list[dict[str, Any]], tenant_id: str, doc_type: str = "sales_receipt") -> str:
     statements: list[str] = []
+    seq_seed = int(str(uuid.uuid4().int)[0:6]) * 1000
+    invoice_prefix = "PV-" if doc_type == "payment_voucher" else "RCT-"
 
-    for row in rows:
+    for i, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
             continue
 
-        receipt_id = str(uuid.uuid4())
-        receipt_no = str(row.get("receipt_no") or f"RCT-{str(receipt_id)[:8]}")
-        vendor_name = str(row.get("vendor_name") or "Unknown Vendor")
+        record_id = str(uuid.uuid4())
+        receipt_no = str(row.get("receipt_no") or f"{invoice_prefix}{str(record_id)[:8]}")
+        vendor_name = str(row.get("vendor_name") or "")
+        customer_name = str(row.get("customer_name") or "")
         currency = str(row.get("currency") or "CAD")
-        date_str = str(row.get("receipt_date") or "2026-04-28")
-        raw_text = str(row.get("raw_text") or "")
-        try:
-            amount = float(row.get("amount_total", 0) or 0)
-        except Exception:
-            amount = 0.0
+        desc = str(row.get("description") or receipt_no or vendor_name or customer_name or "Imported from text")
+        date_str = _coerce_date(row.get("date") or row.get("receipt_date"))
+        amount = _coerce_amount(row.get("amount") or row.get("amount_total"))
+        subtotal = _coerce_amount(row.get("subtotal") or amount)
+        tax_amount = _coerce_amount(row.get("tax_amount"))
+        line_items = row.get("line_items") if isinstance(row.get("line_items"), list) else []
+        invoice_sequence = seq_seed + i
+        customer_id = str(uuid.uuid4())
+        snapshot = {
+            key: value
+            for key, value in {
+                "receipt_no": receipt_no,
+                "vendor_name": vendor_name,
+                "customer_name": customer_name,
+                "currency": currency,
+            }.items()
+            if value
+        }
 
-        stmt = f"""
-            INSERT INTO s_sqlalchemy.b_receipt (
-            tenant_id, id, receipt_no, vendor_name, currency, amount_total, receipt_date, raw_text,
-            status, description, value, date_time, is_deleted, is_flag
+        stmt = dedent(
+            f"""
+            INSERT INTO {INVOICE_RLS_TABLE} (
+                tenant_id, id, inv_rec, extras, issue_date, due_date, invoice_prefix,
+                invoice_sequence, customer_id, customer_snapshot, line_items, subtotal,
+                other_items, total1, total2, total3, total4, total5, total6, total7, total8, total9,
+                discount_rate, discount_flat_amount, discounted_subtotal, tax_amount, total_amount,
+                amount_credited, amount_paid, balance_due, status, payment_status, mark_as_sent,
+                auto_apply, tax_breakdown, payment_terms, shipping_info, notes, description, value, date_time
             ) VALUES (
-            {_q(tenant_id)}::uuid, {_q(receipt_id)}::uuid, {_q(receipt_no)}, {_q(vendor_name)}, {_q(currency)},
-            {amount}, {_q(date_str)}, {_q(raw_text)},
-            'active', {_q(vendor_name)}, {amount}, {_q(date_str)}, false, false
+                {_q(tenant_id)}::uuid, {_q(record_id)}::uuid, {_q(doc_type)}, {_jsonb({})}, {_q(date_str)}, {_q(date_str)}, {_q(invoice_prefix)},
+                {invoice_sequence}, {_q(customer_id)}::uuid, {_jsonb(snapshot)}, {_jsonb(line_items)}, {subtotal},
+                {_jsonb([])}, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, {subtotal}, {tax_amount}, {amount},
+                0, {amount}, 0, 'paid', 'paid', false,
+                false, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_q(desc)}, {amount}, {_q(date_str)}
             );
-            """.strip()
+            """
+        ).strip()
         statements.append(stmt)
 
     return "\n".join(statements)
@@ -372,22 +396,29 @@ async def generate_receipt_insert_sql(
     text: str,
     tenant_id: str | None,
     openai_api_key: str | None,
+    schema_context: str | None = None,
+    doc_type: str = "sales_receipt",
     model: str = "gpt-4o",
 ) -> dict:
+    normalized_doc_type = _normalize_doc_type(doc_type)
+    default_schema_context, schema_context_version = get_schema_context(normalized_doc_type)
+    effective_schema_context = (schema_context or default_schema_context).strip()
     logger.info("Generating receipt SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
     extracted = await _extract_rows_with_openai(
         text=text,
         openai_api_key=openai_api_key,
         model=model,
         system_prompt=(
-            "Extract receipt rows from text and return JSON only. "
-            'Format: {"rows":[{"receipt_no":"...","vendor_name":"...","currency":"CAD","amount_total":123.45,"receipt_date":"YYYY-MM-DD","raw_text":"..."}]}'
+            f"Extract {normalized_doc_type} rows from text and return JSON only. "
+            "Use the schema context for field choices, but do not generate SQL. "
+            'Format: {"rows":[{"description":"...","amount":123.45,"date":"YYYY-MM-DD","subtotal":123.45,"tax_amount":0,"customer_name":"...","vendor_name":"...","receipt_no":"...","currency":"CAD","line_items":[]}]}'
+            f"\n\nSchema context:\n{effective_schema_context}"
         ),
     )
     if "rows" not in extracted:
         return extracted
 
-    sql = _build_receipt_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID)
+    sql = _build_receipt_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID, normalized_doc_type)
     if not sql:
         logger.error("Receipt SQL generation produced no statements row_count=%s", len(extracted["rows"]))
         return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
@@ -397,9 +428,11 @@ async def generate_receipt_insert_sql(
         "sql": sql,
         "metadata": {
             "mode": "deterministic_insert",
-            "doc_type": "sales_receipt",
+            "doc_type": normalized_doc_type,
             "table_route": "receipt",
             "row_count": len(extracted["rows"]),
+            "target_table": INVOICE_RLS_TABLE,
+            "schema_context_version": schema_context_version if not schema_context else "caller_override",
         },
     }
 
@@ -501,37 +534,17 @@ async def generate_payment_voucher_insert_sql(
     text: str,
     tenant_id: str | None,
     openai_api_key: str | None,
+    schema_context: str | None = None,
     model: str = "gpt-4o",
 ) -> dict:
-    logger.info("Generating payment voucher SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
-    extracted = await _extract_rows_with_openai(
+    return await generate_receipt_insert_sql(
         text=text,
+        tenant_id=tenant_id,
         openai_api_key=openai_api_key,
+        schema_context=schema_context,
+        doc_type="payment_voucher",
         model=model,
-        system_prompt=(
-            "Extract payment voucher rows from text and return JSON only. "
-            "Use vendor_name for the payee and receipt_no for the voucher or payment reference number. "
-            'Format: {"rows":[{"receipt_no":"...","vendor_name":"...","currency":"CAD","amount_total":123.45,"receipt_date":"YYYY-MM-DD","raw_text":"..."}]}'
-        ),
     )
-    if "rows" not in extracted:
-        return extracted
-
-    sql = _build_receipt_insert_sql(extracted["rows"], tenant_id or DEFAULT_TENANT_ID)
-    if not sql:
-        logger.error("Payment voucher SQL generation produced no statements row_count=%s", len(extracted["rows"]))
-        return {"error": "no_valid_rows_for_insert", "sql": "", "metadata": {}}
-
-    logger.info("Payment voucher SQL generated row_count=%s sql_length=%s", len(extracted["rows"]), len(sql))
-    return {
-        "sql": sql,
-        "metadata": {
-            "mode": "deterministic_insert",
-            "doc_type": "payment_voucher",
-            "table_route": "receipt",
-            "row_count": len(extracted["rows"]),
-        },
-    }
 
 
 async def generate_sales_receipt_insert_sql(
@@ -539,12 +552,15 @@ async def generate_sales_receipt_insert_sql(
     text: str,
     tenant_id: str | None,
     openai_api_key: str | None,
+    schema_context: str | None = None,
     model: str = "gpt-4o",
 ) -> dict:
     return await generate_receipt_insert_sql(
         text=text,
         tenant_id=tenant_id,
         openai_api_key=openai_api_key,
+        schema_context=schema_context,
+        doc_type="sales_receipt",
         model=model,
     )
 
@@ -617,6 +633,7 @@ async def generate_insert_sql_for_doc_type(
             text=text,
             tenant_id=tenant_id,
             openai_api_key=openai_api_key,
+            schema_context=schema_context,
             model=model,
         )
     if normalized_doc_type == "sales_receipt":
@@ -624,6 +641,7 @@ async def generate_insert_sql_for_doc_type(
             text=text,
             tenant_id=tenant_id,
             openai_api_key=openai_api_key,
+            schema_context=schema_context,
             model=model,
         )
     if normalized_doc_type == "bank_statement":
