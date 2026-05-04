@@ -350,7 +350,6 @@ async def generate_sql_from_text(
     schema_context: str | None = None,
     tenant_id: str | None = None,
 ) -> dict:
-    _ = schema_context
     classification = await classify_text_type_from_text(
         text=text,
         openai_api_key=settings.OPENAI_API_KEY,
@@ -361,7 +360,7 @@ async def generate_sql_from_text(
     result = await generate_insert_sql_for_doc_type(
         doc_type=classification["doc_type"],
         text=text,
-        schema_context=None,
+        schema_context=schema_context,
         tenant_id=tenant_id,
         openai_api_key=settings.OPENAI_API_KEY,
     )

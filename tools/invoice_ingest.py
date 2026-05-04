@@ -2,9 +2,13 @@ import json
 import logging
 import time
 import uuid
+from datetime import datetime
+from textwrap import dedent
 from typing import Any
 
 import httpx
+
+from tools.schema_context import INVOICE_RLS_TABLE, get_schema_context
 
 DEFAULT_TENANT_ID = "550e8400-e29b-41d4-a716-446655440000"
 OPENAI_TIMEOUT_SECONDS = 300
@@ -74,6 +78,27 @@ def _coerce_confidence(raw_value: Any) -> float:
     if value > 1:
         return 1.0
     return value
+
+
+def _coerce_amount(raw_value: Any) -> float:
+    try:
+        return float(raw_value or 0)
+    except Exception:
+        return 0.0
+
+
+def _coerce_date(raw_value: Any) -> str:
+    value = str(raw_value or "").strip()
+    if not value:
+        return "2026-04-28"
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date().isoformat()
+    except Exception:
+        return value[:10] if len(value) >= 10 else "2026-04-28"
+
+
+def _jsonb(value: Any) -> str:
+    return _q(json.dumps(value, ensure_ascii=False)) + "::jsonb"
 
 
 async def _extract_rows_with_openai(
@@ -184,32 +209,45 @@ def _build_invoice_insert_sql(rows: list[dict[str, Any]], tenant_id: str) -> str
         if not isinstance(row, dict):
             continue
 
-        desc = row.get("description") or "Imported from text"
-        date_str = row.get("date") or "2026-04-28"
-        try:
-            amount = float(row.get("amount", 0) or 0)
-        except Exception:
-            amount = 0.0
+        desc = str(row.get("description") or row.get("invoice_number") or row.get("customer_name") or "Imported from text")
+        date_str = _coerce_date(row.get("date"))
+        due_date = _coerce_date(row.get("due_date") or date_str)
+        amount = _coerce_amount(row.get("amount"))
+        subtotal = _coerce_amount(row.get("subtotal") or amount)
+        tax_amount = _coerce_amount(row.get("tax_amount"))
+        line_items = row.get("line_items") if isinstance(row.get("line_items"), list) else []
+        customer_snapshot = {
+            key: value
+            for key, value in {
+                "customer_name": row.get("customer_name"),
+                "invoice_number": row.get("invoice_number"),
+            }.items()
+            if value
+        }
 
         invoice_id = str(uuid.uuid4())
         customer_id = str(uuid.uuid4())
         invoice_sequence = seq_seed + i
 
-        stmt = f"""
-            INSERT INTO s_sqlalchemy.a_invoices (
-            inv_rec, issue_date, due_date, invoice_prefix, invoice_sequence, customer_id,
-            subtotal, total1, total2, total3, total4, total5, total6, total7, total8, total9,
-            discount_rate, discount_flat_amount, discounted_subtotal, tax_amount, total_amount,
-            amount_credited, amount_paid, balance_due, status, payment_status, mark_as_sent, auto_apply,
-            tenant_id, id, description, value, date_time
+        stmt = dedent(
+            f"""
+            INSERT INTO {INVOICE_RLS_TABLE} (
+                tenant_id, id, inv_rec, extras, issue_date, due_date, invoice_prefix,
+                invoice_sequence, customer_id, customer_snapshot, line_items, subtotal,
+                other_items, total1, total2, total3, total4, total5, total6, total7, total8, total9,
+                discount_rate, discount_flat_amount, discounted_subtotal, tax_amount, total_amount,
+                amount_credited, amount_paid, balance_due, status, payment_status, mark_as_sent,
+                auto_apply, tax_breakdown, payment_terms, shipping_info, notes, description, value, date_time
             ) VALUES (
-            'invoice', {_q(date_str)}, {_q(date_str)}, 'TXT-', {invoice_sequence}, {_q(customer_id)}::uuid,
-            {amount}, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, {amount}, 0, {amount},
-            0, 0, {amount}, 'processing', 'pending', false, false,
-            {_q(tenant_id)}::uuid, {_q(invoice_id)}::uuid, {_q(desc)}, {amount}, {_q(date_str)}
+                {_q(tenant_id)}::uuid, {_q(invoice_id)}::uuid, 'invoice', {_jsonb({})}, {_q(date_str)}, {_q(due_date)}, 'INV-',
+                {invoice_sequence}, {_q(customer_id)}::uuid, {_jsonb(customer_snapshot)}, {_jsonb(line_items)}, {subtotal},
+                {_jsonb([])}, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, {subtotal}, {tax_amount}, {amount},
+                0, 0, {amount}, 'draft', 'pending', false,
+                false, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_q(desc)}, {amount}, {_q(date_str)}
             );
-            """.strip()
+            """
+        ).strip()
         statements.append(stmt)
 
     return "\n".join(statements)
@@ -293,7 +331,8 @@ async def generate_invoice_insert_sql(
     openai_api_key: str | None,
     model: str = "gpt-4o",
 ) -> dict:
-    _ = schema_context
+    default_schema_context, schema_context_version = get_schema_context("customer_invoice")
+    effective_schema_context = (schema_context or default_schema_context).strip()
     logger.info("Generating invoice SQL text_length=%s tenant_id=%s model=%s", len(text or ""), tenant_id, model)
     extracted = await _extract_rows_with_openai(
         text=text,
@@ -301,7 +340,9 @@ async def generate_invoice_insert_sql(
         model=model,
         system_prompt=(
             "Extract invoice rows from text and return JSON only. "
-            'Format: {"rows":[{"description":"...","amount":123.45,"date":"YYYY-MM-DD"}]}'
+            "Use the schema context for field choices, but do not generate SQL. "
+            'Format: {"rows":[{"description":"...","amount":123.45,"date":"YYYY-MM-DD","due_date":"YYYY-MM-DD","subtotal":123.45,"tax_amount":0,"customer_name":"...","invoice_number":"...","line_items":[]}]}'
+            f"\n\nSchema context:\n{effective_schema_context}"
         ),
     )
     if "rows" not in extracted:
@@ -320,6 +361,8 @@ async def generate_invoice_insert_sql(
             "doc_type": "customer_invoice",
             "table_route": "invoice",
             "row_count": len(extracted["rows"]),
+            "target_table": INVOICE_RLS_TABLE,
+            "schema_context_version": schema_context_version if not schema_context else "caller_override",
         },
     }
 
