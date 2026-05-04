@@ -14,7 +14,7 @@ def create_app() -> FastAPI:
         async with mcp.session_manager.run():
             yield
 
-    app = FastAPI(title="Finance MCP Server", lifespan=lifespan)
+    app = FastAPI(title="AAAA MCP Server", lifespan=lifespan)
     app.mount("/mcp", mcp_app)
 
     @app.get("/health")
