@@ -237,14 +237,14 @@ def _build_invoice_insert_sql(rows: list[dict[str, Any]], tenant_id: str) -> str
                 other_items, total1, total2, total3, total4, total5, total6, total7, total8, total9,
                 discount_rate, discount_flat_amount, discounted_subtotal, tax_amount, total_amount,
                 amount_credited, amount_paid, balance_due, status, payment_status, mark_as_sent,
-                auto_apply, tax_breakdown, payment_terms, shipping_info, notes, description, value, date_time
+                auto_apply, tax_breakdown, payment_terms, shipping_info, notes, description
             ) VALUES (
                 {_q(tenant_id)}::uuid, {_q(invoice_id)}::uuid, 'invoice', {_jsonb({})}, {_q(date_str)}, {_q(due_date)}, 'INV-',
                 {invoice_sequence}, {_q(customer_id)}::uuid, {_jsonb(customer_snapshot)}, {_jsonb(line_items)}, {subtotal},
                 {_jsonb([])}, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, {subtotal}, {tax_amount}, {amount},
                 0, 0, {amount}, 'draft', 'pending', false,
-                false, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_q(desc)}, {amount}, {_q(date_str)}
+                false, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_q(desc)}
             );
             """
         ).strip()
@@ -294,14 +294,14 @@ def _build_receipt_insert_sql(rows: list[dict[str, Any]], tenant_id: str, doc_ty
                 other_items, total1, total2, total3, total4, total5, total6, total7, total8, total9,
                 discount_rate, discount_flat_amount, discounted_subtotal, tax_amount, total_amount,
                 amount_credited, amount_paid, balance_due, status, payment_status, mark_as_sent,
-                auto_apply, tax_breakdown, payment_terms, shipping_info, notes, description, value, date_time
+                auto_apply, tax_breakdown, payment_terms, shipping_info, notes, description
             ) VALUES (
                 {_q(tenant_id)}::uuid, {_q(record_id)}::uuid, {_q(doc_type)}, {_jsonb({})}, {_q(date_str)}, {_q(date_str)}, {_q(invoice_prefix)},
                 {invoice_sequence}, {_q(customer_id)}::uuid, {_jsonb(snapshot)}, {_jsonb(line_items)}, {subtotal},
                 {_jsonb([])}, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, {subtotal}, {tax_amount}, {amount},
                 0, {amount}, 0, 'paid', 'paid', false,
-                false, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_q(desc)}, {amount}, {_q(date_str)}
+                false, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_jsonb({})}, {_q(desc)}
             );
             """
         ).strip()

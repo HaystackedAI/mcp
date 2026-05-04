@@ -1,9 +1,9 @@
-INVOICE_RLS_TABLE = "s_sqlalchemy.invoices_rls"
+INVOICE_RLS_TABLE = "invoices_rls"
 INVOICE_RLS_SCHEMA_CONTEXT_VERSION = "invoice_rls_v1"
 
 CUSTOMER_INVOICE_SCHEMA_CONTEXT = """
 Document type: customer_invoice
-Target table: s_sqlalchemy.invoices_rls
+Target table: invoices_rls
 Source model: tools/schema/m_invoice_rls.py, InvoiceDB
 
 Use the source text to extract invoice-level data. Return JSON only; do not write SQL.
@@ -43,7 +43,7 @@ Do not insert invoice_number because it is a computed column.
 
 SALES_RECEIPT_SCHEMA_CONTEXT = """
 Document type: sales_receipt
-Target table: s_sqlalchemy.invoices_rls
+Target table: invoices_rls
 Source model: tools/schema/m_invoice_rls.py, InvoiceDB
 
 Use the source text to extract receipt-level data. Return JSON only; do not write SQL.
@@ -81,7 +81,7 @@ Do not insert invoice_number because it is a computed column.
 
 PAYMENT_VOUCHER_SCHEMA_CONTEXT = """
 Document type: payment_voucher
-Target table: s_sqlalchemy.invoices_rls
+Target table: invoices_rls
 Source model: tools/schema/m_invoice_rls.py, InvoiceDB
 
 Use the source text to extract payment-voucher-level data. Return JSON only; do not write SQL.
